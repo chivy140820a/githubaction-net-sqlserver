@@ -1,0 +1,99 @@
+name: CI/CD Workflow on ubuntu
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+          include-prerelease: true
+
+      - name: Check .NET Core version
+        run: dotnet --version
+
+      - name: Build code
+        run: dotnet build --configuration Release
+
+      - name: Update Configuration for Staging 
+        run: | 
+          jq '.ConnectionStrings.DefaultConnection = "YourConnectionStringForStaging"' GitHubAction_Net_SqlServer/appsettings.json > tmp.$$.json && mv tmp.$$.json GitHubAction_Net_SqlServer/appsettings.json
+
+      - name: Install coverlet 
+        run: dotnet tool install --global coverlet.console
+
+      - name: Run Tests with Coverage
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet test --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./coverage/
+
+
+      # - name: SonarQube Scan 
+      #   uses: sonarsource/sonarcloud-github-action@v1 
+      #   with: 
+      #     projectBaseDir: . 
+      #     args: > 
+      #       -Dsonar.projectKey=${{ secrets.SONARQUBE_PROJECT_KEY }} 
+      #       -Dsonar.organization=${{ secrets.SONARQUBE_ORG }} 
+      #       -Dsonar.host.url=${{ secrets.SONARQUBE_HOST }} 
+      #       -Dsonar.login=${{ secrets.SONARQUBE_TOKEN }} 
+      #       -Dsonar.cs.opencover.reportsPaths=coverage.opencover.xml
+
+      - name: Run Tests
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Publish code
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        run: docker build -t chivy14082000/gitaction-net-sqlserver:${{ github.sha }} -f GitHubAction_Net_SqlServer/Dockerfile GitHubAction_Net_SqlServer/
+
+      - name: Build SQL Server Docker image
+        run: docker build -t chivy14082000/sqlserver:${{ github.sha }} -f GitHubAction_Net_SqlServer/Dockerfile.database GitHubAction_Net_SqlServer/
+      - name: Log in to Docker Hub
+        run: docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Push Docker image
+        run: docker push chivy14082000/demogitaction:${{ github.sha }}
+
+      - name: Push SQL Server Docker
+        run: docker push chivy14082000/sqlserver:${{ github.sha }}
+
+      - name: Cleanup old Docker images
+        run: docker image prune -af
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: build-and-deploy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+          include-prerelease: true
+
+      - name: Publish code
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: 'your-app-name'
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
+          package: ./publish

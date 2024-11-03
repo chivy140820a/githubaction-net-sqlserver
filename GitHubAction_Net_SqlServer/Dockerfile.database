@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/mssql/server:2019-latest
+ENV SA_PASSWORD=YourStrong!Passw0rd
+ENV ACCEPT_EULA=Y
+
+# Copy database files
+COPY ./data /var/opt/mssql/data
+
+# Start SQL Server
+#CMD /opt/mssql/bin/sqlservr
