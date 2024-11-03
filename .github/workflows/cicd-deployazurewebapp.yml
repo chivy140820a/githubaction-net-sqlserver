@@ -66,7 +66,7 @@ jobs:
         run: docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Push Docker image
-        run: docker push chivy14082000/demogitaction:${{ github.sha }}
+        run: docker push chivy14082000/gitaction-net-sqlserver:${{ github.sha }}
 
       - name: Push SQL Server Docker
         run: docker push chivy14082000/sqlserver:${{ github.sha }}
